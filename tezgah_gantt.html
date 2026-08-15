@@ -3417,7 +3417,8 @@ function loadDemo(){
       if(!res.err){FAI_SET=res.set;FAI_META={fname:faiRec.fname,at:faiRec.at,total:res.total,matched:0};}
     }
     busy(false);
-    if(!rec||!rec.rows||rec.rows.length<2){
+    const forceDemo = /[?&]demo=1/.test(location.search);
+    if(forceDemo || !rec || !rec.rows || rec.rows.length<2){
       // İlk açılış — kullanıcı boş ekranla karşılaşmasın
       try{
         const rows=buildDemoRows();
