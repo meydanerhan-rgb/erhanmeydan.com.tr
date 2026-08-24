@@ -5,21 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MYD — OPEX Detay &amp; Analiz Sistemi</title>
 <script>
-/* MiniChart — Chart.js yerine gömülü hafif çizim motoru (bar + line). Dış bağlantı yok. */
+/* MiniChart v2 — gömülü hafif çizim motoru (bar + line + karışık, yatay bar, tıklama). Dış bağlantı yok. */
 (function(){
   function pick(o,d){ return o===undefined?d:o; }
   function fmtAuto(v){
     var a=Math.abs(v);
     if(a>=1e6) return (v/1e6).toFixed(1).replace(/\.0$/,'')+'M';
     if(a>=1e3) return (v/1e3).toFixed(a>=1e4?0:1).replace(/\.0$/,'')+'k';
-    return (Math.round(v*10)/10)+'';
+    return (Math.round(v*100)/100)+'';
   }
   function niceStep(range,target){
     if(!(range>0)) return 1;
     var raw=range/target, p=Math.pow(10,Math.floor(Math.log(raw)/Math.LN10)), n=raw/p;
     return (n<=1?1:n<=2?2:n<=5?5:10)*p;
   }
-  function css(el,prop){ try{ return getComputedStyle(el).getPropertyValue(prop); }catch(e){ return ''; } }
 
   function MiniChart(el, cfg){
     this.canvas = (typeof el==='string')?document.getElementById(el):(el&&el.canvas?el.canvas:el);
@@ -34,8 +33,15 @@
     var self=this;
     this._onMove = function(e){ self._hover(e); };
     this._onLeave = function(){ self._hideTip(); };
+    this._onClick = function(e){
+      var o=self.options||{};
+      if(typeof o.onClick!=='function') return;
+      var hit=self._hit(e);
+      o.onClick(e, hit?[{index:hit.i, datasetIndex:hit.ds}]:[]);
+    };
     this.canvas.addEventListener('mousemove', this._onMove);
     this.canvas.addEventListener('mouseleave', this._onLeave);
+    this.canvas.addEventListener('click', this._onClick);
     if(!MiniChart._ro && window.ResizeObserver){
       MiniChart._all = MiniChart._all || [];
       MiniChart._ro = new ResizeObserver(function(){ (MiniChart._all||[]).forEach(function(c){ c.draw(); }); });
@@ -51,13 +57,17 @@
   MiniChart.prototype.destroy = function(){
     this.canvas.removeEventListener('mousemove', this._onMove);
     this.canvas.removeEventListener('mouseleave', this._onLeave);
+    this.canvas.removeEventListener('click', this._onClick);
     this._hideTip();
   };
 
-  MiniChart.prototype._fmt = function(v){
-    var o=this.options||{}, sc=o.scales||{}, y=sc.y||{}, t=y.ticks||{};
+  MiniChart.prototype._axisFmt = function(v, axis){
+    var o=this.options||{}, sc=o.scales||{}, a=sc[axis]||{}, t=a.ticks||{};
     if(typeof t.callback==='function'){ try{ return String(t.callback.call(this, v)); }catch(e){} }
     return fmtAuto(v);
+  };
+  MiniChart.prototype._valFmt = function(v){
+    return this._axisFmt(v, (this.options&&this.options.indexAxis==='y')?'x':'y');
   };
   MiniChart.prototype._tipText = function(dsIdx, i){
     var o=this.options||{}, pl=o.plugins||{}, tt=pl.tooltip||{}, cb=tt.callbacks||{};
@@ -66,11 +76,12 @@
       try{ var r=cb.label({ dataset:ds, datasetIndex:dsIdx, dataIndex:i, parsed:{y:v,x:v}, raw:v, label:this.data.labels[i], formattedValue:String(v) });
            return Array.isArray(r)?r.join(' '):String(r); }catch(e){}
     }
-    return (ds.label?ds.label+': ':'')+this._fmt(v);
+    return (ds.label?ds.label+': ':'')+this._valFmt(v);
   };
+  MiniChart.prototype._dsType = function(ds){ return ds.type || this.type; };
 
   MiniChart.prototype.draw = function(){
-    var cv=this.canvas, ctx=this.ctx;
+    var cv=this.canvas, ctx=this.ctx, self=this;
     var host=cv.parentNode||cv;
     var W=Math.max(120, host.clientWidth||cv.clientWidth||cv.width||300);
     var H=Math.max(90,  host.clientHeight||cv.clientHeight||cv.height||180);
@@ -84,131 +95,205 @@
     var vals=[];
     dss.forEach(function(d){ (d.data||[]).forEach(function(v){ if(typeof v==='number'&&isFinite(v)) vals.push(v); }); });
     var fam=MiniChart.defaults.font.family, col=MiniChart.defaults.color;
+    this._boxes=[];
     if(!labels.length||!vals.length){
       ctx.font='12px '+fam; ctx.fillStyle=col; ctx.globalAlpha=.55;
       ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText('Veri yok', W/2, H/2); ctx.globalAlpha=1;
-      this._boxes=[]; return;
+      return;
     }
 
+    var horiz = (this.options&&this.options.indexAxis==='y');
     var maxV=Math.max.apply(null, vals), minV=Math.min.apply(null, vals);
     if(minV>0) minV=0; if(maxV<0) maxV=0;
     if(maxV===minV) maxV=minV+1;
-    var step=niceStep(maxV-minV,4);
+    var step=niceStep(maxV-minV, horiz?3:4);
     var top=Math.ceil(maxV/step)*step, bot=Math.floor(minV/step)*step;
     if(top===bot) top=bot+step;
 
-    // eksen etiketleri için sol boşluk
+    var showLegend = dss.length>1 && dss.some(function(d){return d.label;});
+    var n=labels.length;
+
+    if(horiz){
+      /* ---------- YATAY BAR ---------- */
+      ctx.font='11px '+fam;
+      var lblW=0;
+      for(var q=0;q<n;q++) lblW=Math.max(lblW, ctx.measureText(String(labels[q]==null?'':labels[q])).width);
+      lblW=Math.min(lblW, Math.max(70, W*0.34));
+      var padL=Math.ceil(lblW)+12, padR=14, padT=showLegend?22:8, padB=22;
+      var cw=W-padL-padR, chh=H-padT-padB;
+      if(cw<20||chh<20) return;
+      var x0=function(v){ return padL + cw*(v-bot)/(top-bot); };
+
+      ctx.strokeStyle='rgba(120,132,148,.16)'; ctx.lineWidth=1;
+      ctx.fillStyle=col; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.font='10px '+fam;
+      for(var gv=bot; gv<=top+1e-9; gv+=step){
+        var gx=Math.round(x0(gv))+.5;
+        ctx.beginPath(); ctx.moveTo(gx,padT); ctx.lineTo(gx,padT+chh); ctx.stroke();
+        ctx.globalAlpha=.85; ctx.fillText(this._axisFmt(gv,'x'), gx, padT+chh+5); ctx.globalAlpha=1;
+      }
+      var rowH=chh/n, nds=dss.length;
+      var gapY=Math.min(7, rowH*.22);
+      var bh=Math.max(4,(rowH-gapY*2)/nds - (nds>1?2:0));
+      for(var d=0; d<nds; d++){
+        var ds=dss[d], arr=ds.data||[];
+        for(var i=0;i<n;i++){
+          var v=arr[i]; if(typeof v!=='number'||!isFinite(v)) continue;
+          var bc=ds.backgroundColor;
+          ctx.fillStyle = Array.isArray(bc)?(bc[i]||bc[0]||'#EF7D0C'):(bc||'#EF7D0C');
+          var by=padT+rowH*i+gapY+d*(bh+(nds>1?2:0));
+          var xz=x0(Math.max(bot,Math.min(0,top))), xv=x0(v);
+          var bx=Math.min(xz,xv), bw=Math.max(2,Math.abs(xv-xz));
+          var r=Math.min(pick(ds.borderRadius,4), bh/2, bw);
+          ctx.beginPath();
+          if(ctx.roundRect){ ctx.roundRect(bx,by,bw,bh,[0,r,r,0]); }
+          else { ctx.rect(bx,by,bw,bh); }
+          ctx.fill();
+          this._boxes.push({x:bx,y:by,w:Math.max(bw,10),h:bh,ds:d,i:i});
+        }
+      }
+      // y etiketleri
+      ctx.fillStyle=col; ctx.textAlign='right'; ctx.textBaseline='middle'; ctx.font='11px '+fam;
+      for(var i2=0;i2<n;i2++){
+        var t2=String(labels[i2]==null?'':labels[i2]);
+        while(t2.length>3 && ctx.measureText(t2).width>lblW) t2=t2.slice(0,-1);
+        if(t2!==String(labels[i2])) t2=t2.slice(0,-1)+'…';
+        ctx.globalAlpha=.9;
+        ctx.fillText(t2, padL-8, padT+rowH*(i2+.5));
+        ctx.globalAlpha=1;
+      }
+      this._drawLegend(ctx,dss,padL,fam,col,showLegend);
+      return;
+    }
+
+    /* ---------- DİKEY: bar + line karışık ---------- */
     ctx.font='10px '+fam;
     var lw=0;
-    for(var g=bot; g<=top+1e-9; g+=step) lw=Math.max(lw, ctx.measureText(this._fmt(g)).width);
-    var showLegend = dss.length>1 && dss.some(function(d){return d.label;});
-    var padL=Math.ceil(lw)+10, padR=8, padT=showLegend?22:10, padB=24;
-    var cw=W-padL-padR, chh=H-padT-padB;
-    if(cw<20||chh<20) return;
-    var y0=function(v){ return padT + chh*(top-v)/(top-bot); };
+    for(var g=bot; g<=top+1e-9; g+=step) lw=Math.max(lw, ctx.measureText(this._axisFmt(g,'y')).width);
+    var pL=Math.ceil(lw)+10, pR=8, pT=showLegend?22:10, pB=24;
+    var w2=W-pL-pR, h2=H-pT-pB;
+    if(w2<20||h2<20) return;
+    var y0=function(v){ return pT + h2*(top-v)/(top-bot); };
 
-    // ızgara
     ctx.strokeStyle='rgba(120,132,148,.16)'; ctx.lineWidth=1;
     ctx.fillStyle=col; ctx.textAlign='right'; ctx.textBaseline='middle'; ctx.font='10px '+fam;
-    for(var v=bot; v<=top+1e-9; v+=step){
-      var yy=Math.round(y0(v))+.5;
-      ctx.beginPath(); ctx.moveTo(padL,yy); ctx.lineTo(padL+cw,yy); ctx.stroke();
-      ctx.globalAlpha=.85; ctx.fillText(this._fmt(v), padL-6, yy); ctx.globalAlpha=1;
+    for(var v3=bot; v3<=top+1e-9; v3+=step){
+      var yy=Math.round(y0(v3))+.5;
+      ctx.beginPath(); ctx.moveTo(pL,yy); ctx.lineTo(pL+w2,yy); ctx.stroke();
+      ctx.globalAlpha=.85; ctx.fillText(this._axisFmt(v3,'y'), pL-6, yy); ctx.globalAlpha=1;
     }
-    // sıfır çizgisi
     if(bot<0&&top>0){ var zy=Math.round(y0(0))+.5; ctx.strokeStyle='rgba(120,132,148,.45)';
-      ctx.beginPath(); ctx.moveTo(padL,zy); ctx.lineTo(padL+cw,zy); ctx.stroke(); }
+      ctx.beginPath(); ctx.moveTo(pL,zy); ctx.lineTo(pL+w2,zy); ctx.stroke(); }
 
-    var n=labels.length, slot=cw/n;
-    this._boxes=[];
+    var slot=w2/n;
+    var barDs=[], lineDs=[];
+    dss.forEach(function(d,idx){ (self._dsType(d)==='line'?lineDs:barDs).push({ds:d,idx:idx}); });
 
-    if(this.type==='line'){
-      for(var d=0; d<dss.length; d++){
-        var ds=dss[d], arr=ds.data||[];
-        var stroke=ds.borderColor||'#EF7D0C';
-        var fill=ds.backgroundColor;
-        var pts=[];
-        for(var i=0;i<n;i++){ var val=arr[i]; if(typeof val!=='number'||!isFinite(val)) continue;
-          pts.push({x:padL+slot*(i+.5), y:y0(val), i:i, v:val}); }
-        if(fill&&pts.length>1){
-          ctx.beginPath(); ctx.moveTo(pts[0].x, y0(Math.max(bot,0)));
-          pts.forEach(function(p){ ctx.lineTo(p.x,p.y); });
-          ctx.lineTo(pts[pts.length-1].x, y0(Math.max(bot,0))); ctx.closePath();
-          ctx.fillStyle=fill; ctx.globalAlpha=.85; ctx.fill(); ctx.globalAlpha=1;
-        }
-        ctx.beginPath(); ctx.lineWidth=pick(ds.borderWidth,2.2); ctx.strokeStyle=stroke;
-        ctx.lineJoin='round'; ctx.lineCap='round';
-        pts.forEach(function(p,k){ k?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y); });
-        ctx.stroke();
-        var self=this;
+    // barlar
+    var nb=barDs.length, gap=Math.min(6, slot*.18);
+    var bw2=nb?Math.max(3,(slot-gap*2)/nb - (nb>1?2:0)):0;
+    barDs.forEach(function(o,bi){
+      var ds=o.ds, arr=ds.data||[];
+      for(var i=0;i<n;i++){
+        var v=arr[i]; if(typeof v!=='number'||!isFinite(v)) continue;
+        var bc=ds.backgroundColor;
+        ctx.fillStyle = Array.isArray(bc)?(bc[i]||bc[0]||'#EF7D0C'):(bc||'#EF7D0C');
+        var bx=pL+slot*i+gap+bi*(bw2+(nb>1?2:0));
+        var yv=y0(v), yz=y0(Math.max(bot,Math.min(0,top)));
+        var by=Math.min(yv,yz), bh=Math.max(1.5,Math.abs(yz-yv));
+        var r=Math.min(pick(ds.borderRadius,4), bw2/2, bh);
+        ctx.beginPath();
+        if(ctx.roundRect){ ctx.roundRect(bx,by,bw2,bh,[r,r,0,0]); }
+        else { ctx.rect(bx,by,bw2,bh); }
+        ctx.fill();
+        self._boxes.push({x:bx,y:Math.min(by,yz-6),w:bw2,h:Math.max(bh,10),ds:o.idx,i:i});
+      }
+    });
+
+    // çizgiler (bar üstüne)
+    lineDs.forEach(function(o){
+      var ds=o.ds, arr=ds.data||[];
+      var stroke=ds.borderColor||'#5A6472';
+      var pts=[];
+      for(var i=0;i<n;i++){ var val=arr[i]; if(typeof val!=='number'||!isFinite(val)) continue;
+        pts.push({x:pL+slot*(i+.5), y:y0(val), i:i, v:val}); }
+      if(!pts.length) return;
+      if(ds.fill && ds.backgroundColor && pts.length>1){
+        ctx.beginPath(); ctx.moveTo(pts[0].x, y0(Math.max(bot,0)));
+        pts.forEach(function(p){ ctx.lineTo(p.x,p.y); });
+        ctx.lineTo(pts[pts.length-1].x, y0(Math.max(bot,0))); ctx.closePath();
+        ctx.fillStyle=ds.backgroundColor; ctx.globalAlpha=.85; ctx.fill(); ctx.globalAlpha=1;
+      }
+      ctx.save();
+      if(ds.borderDash && ctx.setLineDash) ctx.setLineDash(ds.borderDash);
+      ctx.beginPath(); ctx.lineWidth=pick(ds.borderWidth,2.2); ctx.strokeStyle=stroke;
+      ctx.lineJoin='round'; ctx.lineCap='round';
+      pts.forEach(function(p,k){ k?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y); });
+      ctx.stroke();
+      ctx.restore();
+      var pr=pick(ds.pointRadius,3);
+      if(pr>0){
         pts.forEach(function(p){
-          ctx.beginPath(); ctx.arc(p.x,p.y,3,0,Math.PI*2);
-          ctx.fillStyle=stroke; ctx.fill();
+          ctx.beginPath(); ctx.arc(p.x,p.y,pr,0,Math.PI*2);
+          ctx.fillStyle=ds.pointBackgroundColor||stroke; ctx.fill();
           ctx.lineWidth=1.5; ctx.strokeStyle='#fff'; ctx.stroke();
-          self._boxes.push({x:p.x-9,y:p.y-9,w:18,h:18,ds:d,i:p.i});
+          self._boxes.push({x:p.x-9,y:p.y-9,w:18,h:18,ds:o.idx,i:p.i});
         });
       }
-    } else {
-      var nds=dss.length, gap=Math.min(6, slot*.18);
-      var bw=Math.max(3,(slot-gap*2)/nds - (nds>1?2:0));
-      for(var d2=0; d2<nds; d2++){
-        var ds2=dss[d2], arr2=ds2.data||[];
-        for(var i2=0;i2<n;i2++){
-          var v2=arr2[i2]; if(typeof v2!=='number'||!isFinite(v2)) continue;
-          var bc=ds2.backgroundColor;
-          ctx.fillStyle = Array.isArray(bc)?(bc[i2]||bc[0]||'#EF7D0C'):(bc||'#EF7D0C');
-          var bx=padL+slot*i2+gap+d2*(bw+(nds>1?2:0));
-          var yv=y0(v2), yz=y0(Math.max(bot,Math.min(0,top)));
-          var by=Math.min(yv,yz), bh=Math.max(1.5,Math.abs(yz-yv));
-          var r=Math.min(pick(ds2.borderRadius,4), bw/2, bh);
-          ctx.beginPath();
-          if(ctx.roundRect){ ctx.roundRect(bx,by,bw,bh,[r,r,0,0]); }
-          else { ctx.moveTo(bx,by+r); ctx.arcTo(bx,by,bx+r,by,r); ctx.lineTo(bx+bw-r,by);
-                 ctx.arcTo(bx+bw,by,bx+bw,by+r,r); ctx.lineTo(bx+bw,by+bh); ctx.lineTo(bx,by+bh); ctx.closePath(); }
-          ctx.fill();
-          this._boxes.push({x:bx,y:Math.min(by,yz-6),w:bw,h:Math.max(bh,10),ds:d2,i:i2});
-        }
-      }
-    }
+    });
 
     // x etiketleri
     ctx.fillStyle=col; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.font='10px '+fam;
-    var everyN=Math.ceil(n/Math.max(1,Math.floor(cw/52)));
-    for(var i3=0;i3<n;i3++){
-      if(everyN>1 && i3%everyN) continue;
-      var txt=String(labels[i3]==null?'':labels[i3]);
+    var everyN=Math.ceil(n/Math.max(1,Math.floor(w2/52)));
+    for(var i4=0;i4<n;i4++){
+      if(everyN>1 && i4%everyN) continue;
+      var txt=String(labels[i4]==null?'':labels[i4]);
       if(ctx.measureText(txt).width>slot*everyN-4){
         while(txt.length>2 && ctx.measureText(txt+'…').width>slot*everyN-4) txt=txt.slice(0,-1);
         txt+='…';
       }
       ctx.globalAlpha=.85;
-      ctx.fillText(txt, padL+slot*(i3+.5), padT+chh+7);
+      ctx.fillText(txt, pL+slot*(i4+.5), pT+h2+7);
       ctx.globalAlpha=1;
     }
-
-    // açıklama (legend)
-    if(showLegend){
-      var lx=padL, ly=8;
-      ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.font='10px '+fam;
-      dss.forEach(function(ds3){
-        if(!ds3.label) return;
-        var c=ds3.borderColor||(Array.isArray(ds3.backgroundColor)?ds3.backgroundColor[0]:ds3.backgroundColor)||'#EF7D0C';
-        ctx.fillStyle=c; ctx.beginPath();
-        if(ctx.roundRect){ ctx.roundRect(lx,ly-4,9,8,2); } else { ctx.rect(lx,ly-4,9,8); }
-        ctx.fill();
-        ctx.fillStyle=col; ctx.globalAlpha=.9;
-        ctx.fillText(ds3.label, lx+13, ly);
-        ctx.globalAlpha=1;
-        lx += 13 + ctx.measureText(ds3.label).width + 14;
-      });
-    }
+    this._drawLegend(ctx,dss,pL,fam,col,showLegend);
   };
 
-  MiniChart.prototype._hover=function(e){
-    var r=this.canvas.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top, hit=null;
+  MiniChart.prototype._drawLegend=function(ctx,dss,lx0,fam,col,show){
+    if(!show) return;
+    var self=this, lx=lx0, ly=8;
+    ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.font='10px '+fam;
+    dss.forEach(function(ds){
+      if(!ds.label) return;
+      var isLine = self._dsType(ds)==='line';
+      var c=isLine?(ds.borderColor||'#5A6472'):(Array.isArray(ds.backgroundColor)?ds.backgroundColor[0]:ds.backgroundColor)||'#EF7D0C';
+      ctx.fillStyle=c; ctx.strokeStyle=c;
+      if(isLine){
+        ctx.save();
+        if(ds.borderDash&&ctx.setLineDash) ctx.setLineDash([3,3]);
+        ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(lx,ly); ctx.lineTo(lx+11,ly); ctx.stroke();
+        ctx.restore();
+      } else {
+        ctx.beginPath();
+        if(ctx.roundRect){ ctx.roundRect(lx,ly-4,9,8,2); } else { ctx.rect(lx,ly-4,9,8); }
+        ctx.fill();
+      }
+      ctx.fillStyle=col; ctx.globalAlpha=.9;
+      ctx.fillText(ds.label, lx+15, ly);
+      ctx.globalAlpha=1;
+      lx += 15 + ctx.measureText(ds.label).width + 14;
+    });
+  };
+
+  MiniChart.prototype._hit=function(e){
+    var r=this.canvas.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
     for(var k=0;k<this._boxes.length;k++){ var b=this._boxes[k];
-      if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h){ hit=b; break; } }
+      if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h) return b; }
+    return null;
+  };
+  MiniChart.prototype._hover=function(e){
+    var hit=this._hit(e);
+    this.canvas.style.cursor = (hit && this.options && typeof this.options.onClick==='function') ? 'pointer' : 'default';
     if(!hit){ this._hideTip(); return; }
     var txt=this._tipText(hit.ds, hit.i), lbl=String(this.data.labels[hit.i]==null?'':this.data.labels[hit.i]);
     if(!this._tip){
@@ -348,6 +433,16 @@ footer{text-align:center;font-size:.7rem;color:var(--ink-soft);margin-top:20px}
 .pbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
 .pbar button{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:6px 14px;font-size:.76rem;font-weight:600;color:var(--ink-soft);cursor:pointer;font-family:inherit}
 .pbar button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.pbar select{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:6px 12px;font-size:.76rem;font-weight:600;color:var(--ink);font-family:inherit;cursor:pointer}
+.pbar select.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.pbar .sep{width:1px;background:var(--line);margin:2px 4px}
+.kpi .delta.up{color:var(--red);background:var(--red-soft)}
+.kpi .delta.down{color:var(--green);background:var(--green-soft)}
+.bridge{display:flex;gap:2px;align-items:flex-end;height:130px;margin:6px 0 10px}
+.bcol{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px;min-width:0}
+.bbar{width:70%;border-radius:5px 5px 0 0;min-height:3px}
+.bcol .bv{font-family:'IBM Plex Mono','Consolas','Courier New',monospace;font-size:.7rem;font-weight:600;white-space:nowrap}
+.bcol .bl{font-size:.62rem;color:var(--ink-soft);text-align:center;line-height:1.25}
 .dq{background:#FFF6E0;border:1px solid #EAD9A8;border-radius:10px;padding:9px 14px;font-size:.76rem;color:#6B5308;margin-bottom:12px}
 #famDetail{margin-top:10px}
 #famDetail table td{font-size:.76rem;padding:5px 8px}
@@ -488,6 +583,15 @@ tr.supdet td{background:var(--bg);padding:0}
       <h3>Tasarruf vs Zam Etkisi<span class="info" onclick="showDef('save')">ⓘ</span> <span class="tag">AYLIK</span></h3>
       <div class="sub">Her kalemin dönemdeki İLK alım fiyatı "baz" kabul edilir. O ay fiyat bazın altındaysa fark × adet = <b style="color:var(--green)">tasarruf</b>; fiyatı ARTAN ürünlerde ise <b style="color:var(--red)">zam etkisi</b>. · <span class="hinttxt">sütuna tıklayın → kalem kalem dökümü görün</span></div>
       <div class="chart-box"><canvas id="chSave"></canvas></div><div id="saveDetail"></div>
+    </div>
+
+    <div class="panel">
+      <h3 class="clps" onclick="pnlTgl(this)">Harcama Değişim Köprüsü <span class="tag" id="brTag">SON İKİ AY</span><span class="info" onclick="event.stopPropagation();showDef('bridge')">ⓘ</span><span class="caret">▾</span></h3>
+      <div class="pbody">
+      <div class="sub">Harcama farkı neden oluştu? <b>Fiyat etkisi</b> = aynı adette fiyat değişimi · <b>Hacim etkisi</b> = aynı fiyatta adet değişimi · <b>Karma</b> = ürün dağılımı değişimi</div>
+      <div class="bridge" id="bridgeBox"></div>
+      <div id="bridgeNote" class="hinttxt"></div>
+      </div>
     </div>
 
     <div class="panel">
@@ -854,6 +958,9 @@ const DEFS={
   d:'Dugan\u0027\u0131n fatura g\u00FCn\u00FC kuruyla \u00E7evirdi\u011Fi USD tutarlar toplan\u0131r. Hari\u00E7 tutulan genel kodlar dahil edilmez. D\u00F6nem filtresi se\u00E7iliyse yaln\u0131z o d\u00F6nem g\u00F6r\u00FCn\u00FCr.'},
  save:{t:'Ger\u00E7ekle\u015Fen Tasarruf & Zam Etkisi',f:'(Baz fiyat \u2212 ay fiyat\u0131) \u00D7 o ay al\u0131nan adet',
   d:'Baz fiyat: kalemin d\u00F6nemdeki \u0130LK ay\u0131n\u0131n a\u011F\u0131rl\u0131kl\u0131 ortalama birim fiyat\u0131. Fark pozitifse tasarruf, negatifse zam etkisi olarak ayr\u0131 toplan\u0131r; netle\u015Ftirme yap\u0131lmaz. Dikkat listesi \u00B1%2 e\u015Fik kullan\u0131r. Elle veri giri\u015Fi yoktur \u2014 t\u00FCm\u00FC faturadan hesaplan\u0131r.'},
+ bridge:{t:'Harcama De\u011Fi\u015Fim K\u00F6pr\u00FCs\u00FC (Fiyat / Hacim / Karma)',
+  f:'Fiyat = \u03A3(\u0394fiyat \u00D7 \u00F6nceki adet) \u00B7 Hacim = \u03A3(\u0394adet \u00D7 \u00F6nceki fiyat) \u00B7 Karma = \u03A3(\u0394fiyat \u00D7 \u0394adet)',
+  d:'\u0130ki ay aras\u0131ndaki harcama fark\u0131n\u0131 \u00FC\u00E7 nedene ay\u0131r\u0131r: birim fiyatlar\u0131n de\u011Fi\u015Fmesi (fiyat etkisi), al\u0131nan adedin de\u011Fi\u015Fmesi (hacim etkisi) ve ikisinin birlikte de\u011Fi\u015Fmesi (karma etki). Sadece \u00F6nceki ayda da al\u0131nan kalemler kar\u015F\u0131la\u015Ft\u0131r\u0131l\u0131r; yaln\u0131z bir ayda g\u00F6r\u00FClen kalemler \u0022yeni/\u00E7\u0131kan kalem\u0022 olarak ayr\u0131 g\u00F6sterilir. Fiyat etkisi sat\u0131n almay\u0131, hacim etkisi \u00FCretim temposunu i\u015Faret eder.'},
  stock:{t:'Rafta Yatan Tak\u0131m Sto\u011Fu',f:'\u03A3 (stok sat\u0131r\u0131 fiili maliyet toplam\u0131, USD)',
   d:'Stok d\u00F6k\u00FCm\u00FCndeki Fiili Maliyet\u2192Toplam kolonu esas al\u0131n\u0131r; s\u0131f\u0131rsa Standart Maliyet kullan\u0131l\u0131r. Malzeme grubu \u0022Cutting Tools\u0022 filtresi otomatiktir. Son y\u00FCklenen say\u0131m anl\u0131k g\u00F6r\u00FCnt\u00FCd\u00FCr.'}
 };
@@ -890,11 +997,14 @@ function exportAbc(){
   dlWb(aoa,'kalem_abc');
 }
 function exportFin(){
-  const L=window._finRows||[];
-  const aoa=[['Ay','Tak\u0131m Gideri (USD)','Ciro (USD)','Oran (%)']];
-  L.forEach(x=>aoa.push([x.m,+x.s.toFixed(2),+x.r.toFixed(2),x.o!==null?+x.o.toFixed(2):'']));
+  const L=window._finRows||[], M=window._M||{byM:{}};
+  const aoa=[['Ay','Tak\u0131m Gideri (USD)','Ge\u00E7en Y\u0131l Ayn\u0131 Ay (USD)','De\u011Fi\u015Fim (%)','Ciro (USD)','Oran (%)']];
+  L.forEach(x=>{
+    const py=(+x.m.slice(0,4)-1)+x.m.slice(4), pv=(M.byM||{})[py]||0;
+    aoa.push([x.m,+x.s.toFixed(2),pv>0?+pv.toFixed(2):'',(pv>0&&x.s>0)?+(100*(x.s-pv)/pv).toFixed(2):'',+x.r.toFixed(2),x.o!==null?+x.o.toFixed(2):'']);
+  });
   const tS=L.reduce((s,x)=>s+x.s,0),tR=L.reduce((s,x)=>s+x.r,0);
-  aoa.push(['TOPLAM',+tS.toFixed(2),+tR.toFixed(2),tR>0?+(100*tS/tR).toFixed(2):'']);
+  aoa.push(['TOPLAM',+tS.toFixed(2),'','',+tR.toFixed(2),tR>0?+(100*tS/tR).toFixed(2):'']);
   dlWb(aoa,'aylik_dokum');
 }
 function rawTot(slot){ // mutabakat: hari\u00E7 tutulanlar D\u00C2H\u0130L, d\u00F6nem filtresi YOK
@@ -1017,6 +1127,7 @@ function isExcluded(r){
   return z.includes('TAKIMGENEL')||z==='TK0000';
 }
 function toggleMonth(m){ selMonth=(selMonth===m)?null:m; render(); }
+function pickMonth(m){ selMonth=m||null; render(); }
 function clsTgl(c){ selClass=(selClass===c)?null:c; render(); }
 function aggAlis(mf){
   const sup={},items={};let tot=0;
@@ -1066,12 +1177,25 @@ function buildModel(){
       M.sup[s].byM[m]=(M.sup[s].byM[m]||0)+usd;
     });
     M.ms=Object.keys(M.byM).sort();
+    const spanN=M.ms.length?(mNum(M.ms[M.ms.length-1])-mNum(M.ms[0])+1):1;
     for(const k in M.items){
       const it=M.items[k], im=Object.keys(it.months).sort();
       const f=it.months[im[0]], l=it.months[im[im.length-1]];
       it.base=f.q?f.amt/f.q:0; it.last=l.q?l.amt/l.q:0;
-      it.annQ=Object.values(it.months).reduce((s,x)=>s+x.q,0)/im.length*12;
+      it.totQ=Object.values(it.months).reduce((s,x)=>s+x.q,0);
+      it.totAmt=Object.values(it.months).reduce((s,x)=>s+x.amt,0);
+      // yillik adet: DONEM TAKVIM AYI uzerinden (alim yapilan ay sayisi degil)
+      it.annQ=it.totQ/Math.max(1,spanN)*12;
+      it.firstM=im[0]; it.lastM=im[im.length-1];
     }
+    M.spanN=spanN;
+    // aylik adet toplami (fiyat-hacim koprusu icin)
+    M.qtyByM={};
+    M.ms.forEach(m=>{
+      let q=0,a=0;
+      for(const k in M.items){ const x=M.items[k].months[m]; if(x){q+=x.q;a+=x.amt;} }
+      M.qtyByM[m]={q,a};
+    });
     M.ms.forEach(m=>{
       let sv=0,ls=0;
       for(const k in M.items){
@@ -1107,12 +1231,14 @@ const chTrend=new Chart(document.getElementById('chTrend'),{type:'bar',data:{lab
  options:{onClick:(e,els)=>{if(els.length&&window._ms)toggleMonth(window._ms[els[0].index]);},
   plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>money(v)}},x:{grid:{display:false}}},maintainAspectRatio:false}});
 const chSave=new Chart(document.getElementById('chSave'),{type:'bar',data:{labels:[],datasets:[
- {label:'Ger\u00E7ekle\u015Fen tasarruf',data:[],backgroundColor:'#2F8F5B',borderRadius:5},
- {label:'Zam etkisi (fiyat\u0131 artanlar)',data:[],backgroundColor:'#C24A3A',borderRadius:5}]},
+ {label:'Tasarruf',data:[],backgroundColor:'#2F8F5B',borderRadius:5},
+ {label:'Zam etkisi',data:[],backgroundColor:'#C24A3A',borderRadius:5},
+ {type:'line',label:'Net etki',data:[],borderColor:'#1B1F24',borderWidth:2,pointRadius:3,pointBackgroundColor:'#1B1F24'}]},
  options:{onClick:(e,els)=>{if(els.length&&window._ms)showSaveDetail(window._ms[els[0].index]);},
   plugins:{legend:{display:true,labels:{boxWidth:12,font:{size:11}}}},scales:{y:{ticks:{callback:v=>money(v)}},x:{grid:{display:false}}},maintainAspectRatio:false}});
 const chRatio=new Chart(document.getElementById('chRatio'),{type:'line',data:{labels:[],datasets:[
- {data:[],borderColor:'#EF7D0C',backgroundColor:'rgba(239,125,12,.10)',fill:true,tension:.35,pointRadius:3,pointBackgroundColor:'#EF7D0C'}]},
+ {label:'Ayl\u0131k oran',data:[],borderColor:'#EF7D0C',backgroundColor:'rgba(239,125,12,.10)',fill:true,pointRadius:3,pointBackgroundColor:'#EF7D0C'},
+ {type:'line',label:'D\u00F6nem ortalamas\u0131',data:[],borderColor:'#5A6472',borderDash:[6,5],borderWidth:1.6,pointRadius:0}]},
  options:{onClick:(e,els)=>{if(els.length&&window._rms)toggleMonth(window._rms[els[0].index]);},
   plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'%'+v}},x:{grid:{display:false}}},maintainAspectRatio:false}});
 const chFam=new Chart(document.getElementById('chFam'),{type:'bar',data:{labels:[],datasets:[
@@ -1168,7 +1294,8 @@ function render(){
   const pb=document.getElementById('periodBar');
   pb.innerHTML='<button class="'+(periodMode==='all'?'on':'')+'" onclick="setPeriod(\'all\')">T\u00FCm\u00FC</button>'+
    '<button class="'+(periodMode==='last12'?'on':'')+'" onclick="setPeriod(\'last12\')">Son 12 Ay</button>'+
-   years.map(y=>'<button class="'+(periodMode==='year'&&periodYear===y?'on':'')+'" onclick="setPeriod(\'year\',\''+y+'\')">'+y+'</button>').join('');
+   years.map(y=>'<button class="'+(periodMode==='year'&&periodYear===y?'on':'')+'" onclick="setPeriod(\'year\',\''+y+'\')">'+y+'</button>').join('')+
+   '<span class="sep"></span><span id="monthSelWrap"></span>';
   const M=buildModel();
   const has=M.ms.length>0||Object.keys(M.revByM).length>0||M.stockVal>0;
   if(!has){
@@ -1179,29 +1306,53 @@ function render(){
   badge(!window._demoMode);
   const allMs=[...new Set([...M.ms,...Object.keys(M.revByM)])].sort();
   // KPI: son ortak ay oranı
+  // --- KPI: secili ay varsa o ay, yoksa son ay ---
+  const focusM = (selMonth && M.byM[selMonth]!==undefined) ? selMonth : null;
+  const prevOf = m => { const i=M.ms.indexOf(m); return i>0?M.ms[i-1]:null; };
+  const deltaHtml = (cur0,prev0,invert) => {
+    if(!(prev0>0)||!(cur0>=0)) return '';
+    const d=100*(cur0-prev0)/prev0;
+    if(Math.abs(d)<0.05) return '<span class="delta">\u2192 sabit</span>';
+    const bad = invert ? d<0 : d>0;
+    return '<span class="delta '+(bad?'up':'down')+'">'+(d>0?'\u25B2 +':'\u25BC ')+d.toFixed(1)+'%</span>';
+  };
   const common=M.ms.filter(m=>M.revByM[m]>0);
-  if(common.length){
-    const lc=common[common.length-1];
-    document.getElementById('kRatio').textContent='%'+(100*M.byM[lc]/M.revByM[lc]).toFixed(2);
-    document.getElementById('kRatioD').textContent=mLbl(lc);
+  const ratioM = focusM && M.revByM[focusM]>0 ? focusM : (common.length?common[common.length-1]:null);
+  if(ratioM){
+    const pv=prevOf(ratioM), pr=(pv&&M.revByM[pv]>0)?100*M.byM[pv]/M.revByM[pv]:null;
+    const cv=100*M.byM[ratioM]/M.revByM[ratioM];
+    document.getElementById('kRatio').textContent='%'+cv.toFixed(2);
+    document.getElementById('kRatioD').innerHTML=mLbl(ratioM)+' '+(pr?deltaHtml(cv,pr,false):'');
+  } else {
+    document.getElementById('kRatio').textContent='\u2014';
+    document.getElementById('kRatioD').textContent='ortak ay yok';
   }
   if(M.ms.length){
-    const last=M.ms[M.ms.length-1];
-    document.getElementById('kSpend').textContent=fmt(M.byM[last]);
-    document.getElementById('kSpendD').textContent=mLbl(last);
+    const sM = focusM || M.ms[M.ms.length-1];
+    const pv = prevOf(sM);
+    document.getElementById('kSpend').textContent=fmt(M.byM[sM]);
+    document.getElementById('kSpendD').innerHTML=mLbl(sM)+' '+(pv?deltaHtml(M.byM[sM],M.byM[pv],false):'');
     const tot=M.saved.reduce((a,b)=>a+b,0);
+    const totL=M.lost.reduce((a,b)=>a+b,0);
+    const net=tot-totL;
     document.getElementById('kSave').textContent=fmt(tot);
-    document.getElementById('kSaveD').textContent='baz fiyat \u00B7 '+M.ms.length+' ay';
+    document.getElementById('kSaveD').innerHTML='zam etkisi '+fmt(totL)+' \u00B7 net '+
+      '<b style="color:'+(net>=0?'var(--green)':'var(--red)')+'">'+(net>=0?'+':'\u2212')+fmt(Math.abs(net))+'</b>';
   }
   if(M.stockVal>0)document.getElementById('kStock').textContent=fmt(M.stockVal);
-  // trend
+  // trend (ortalama = kesikli cizgi, secili ay koyu)
+  const avgS0 = M.ms.length?M.ms.reduce((s,m)=>s+M.byM[m],0)/M.ms.length:0;
   chTrend.data.labels=M.ms.map(mLbl);
   chTrend.data.datasets[0].data=M.ms.map(m=>+(M.byM[m]/1000).toFixed(2));
+  chTrend.data.datasets[0].backgroundColor=M.ms.map(m=>m===selMonth?'#1B1F24':'#EF7D0C');
+  chTrend.data.datasets[1].data=M.ms.map(()=>+(avgS0/1000).toFixed(2));
   chTrend.update();
-  // tasarruf
+  // tasarruf / zam
   chSave.data.labels=M.ms.map(mLbl);
   chSave.data.datasets[0].data=M.saved.map(v=>+(v/1000).toFixed(2));
-  chSave.data.datasets[1].data=M.lost.map(v=>+(v/1000).toFixed(2));
+  chSave.data.datasets[1].data=M.lost.map(v=>-Math.abs(+(v/1000).toFixed(2)));
+  const netArr=M.ms.map((m,i)=>+((M.saved[i]-M.lost[i])/1000).toFixed(2));
+  chSave.data.datasets[2].data=netArr;
   chSave.update();
   // tedarikçi karnesi: alım tutarı bazlı + ABC + tıklanabilir
   window._M=M; window._ms=M.ms;
@@ -1240,16 +1391,16 @@ function render(){
     '<tr class="supdet" id="abcd_'+i+'" style="display:none"><td colspan="6"><div class="supdet-in">'+itemDetailHTML(x.k)+'</div></td></tr>').join('');
   document.getElementById('supTag').textContent=selMonth?mLbl(selMonth).toUpperCase():'D\u00D6NEM GENEL\u0130';
   document.getElementById('abcTag').textContent=(selMonth?mLbl(selMonth).toUpperCase():'D\u00D6NEM GENEL\u0130')+(selClass?' \u00B7 SINIF '+selClass:'');
-  chTrend.data.datasets[0].backgroundColor=M.ms.map(m=>m===selMonth?'#1B1F24':'#EF7D0C');
-  const avgS=M.ms.length?M.ms.reduce((s,m)=>s+M.byM[m],0)/M.ms.length:0;
-  chTrend.data.datasets[1].data=M.ms.map(()=>+(avgS/1000).toFixed(2));
-  chTrend.update();
+  const avgS=avgS0;
   const cap=document.getElementById('trendCap');
   if(selMonth){
-    cap.innerHTML='<span>Se\u00E7ili ay: <b>'+mLbl(selMonth)+'</b> \u00B7 harcama <b>'+fmt(M.byM[selMonth]||0)+'</b> (ortalama '+fmt(avgS)+')</span>'+
+    const _sorted=M.ms.slice().sort((a,b)=>M.byM[b]-M.byM[a]);
+    const _rank=_sorted.indexOf(selMonth)+1;
+    const _dv=avgS>0?100*((M.byM[selMonth]||0)-avgS)/avgS:0;
+    cap.innerHTML='<span>Se\u00E7ili ay: <b>'+mLbl(selMonth)+'</b> \u00B7 <b>'+fmt(M.byM[selMonth]||0)+'</b> \u00B7 ortalaman\u0131n <b style="color:'+(_dv>0?'var(--red)':'var(--green)')+'">'+(_dv>0?'%'+_dv.toFixed(0)+' \u00FCst\u00FCnde':'%'+Math.abs(_dv).toFixed(0)+' alt\u0131nda')+'</b> \u00B7 '+M.ms.length+' ay i\u00E7inde '+_rank+'. s\u0131rada</span>'+
      '<span class="lnk" onclick="toggleMonth(selMonth)">\u2715 Geneli g\u00F6ster</span>';
   } else {
-    cap.innerHTML='<span>D\u00F6nem ortalamas\u0131: <b>'+fmt(avgS)+'/ay</b> \u00B7 '+M.ms.length+' ay (kesikli \u00E7izgi)</span>'+
+    cap.innerHTML='<span>D\u00F6nem ortalamas\u0131: <b>'+fmt(avgS)+'/ay</b> \u00B7 '+M.ms.length+' ay \u00B7 <span style="opacity:.75">kesikli \u00E7izgi = ortalama</span></span>'+
      '<span class="hinttxt">bir s\u00FCtuna t\u0131klay\u0131n \u2192 o aya odaklan\u0131n</span>';
   }
   // dikkat
@@ -1304,12 +1455,22 @@ function render(){
   const rms=finRows.filter(x=>x.o!==null);
   chRatio.data.labels=rms.map(x=>mLbl(x.m));
   chRatio.data.datasets[0].data=rms.map(x=>+x.o.toFixed(2));
+  const avgO = (sumR>0)?100*sumS/sumR:0;
+  chRatio.data.datasets[1].data=rms.map(()=>+avgO.toFixed(2));
   chRatio.update();
+  window._rms=rms.map(x=>x.m);
   window._finRows=finRows;
+  const yoyOf=(m,val)=>{
+    const py=(+m.slice(0,4)-1)+m.slice(4);
+    const pv=M.byM[py];
+    if(!(pv>0)||!(val>0))return '\u2014';
+    const d=100*(val-pv)/pv;
+    return '<span style="color:'+(d>0?'var(--red)':'var(--green)')+';font-weight:600">'+(d>0?'+':'')+d.toFixed(1)+'%</span>';
+  };
   document.getElementById('tblFin').innerHTML=
-   '<tr><th>Ay</th><th class="r">Tak\u0131m Gideri</th><th class="r">Ciro</th><th class="r">Oran</th></tr>'+
-   finRows.map(x=>'<tr><td>'+mLbl(x.m)+'</td><td class="num r">'+(x.s?fmt(x.s):'\u2014')+'</td><td class="num r">'+(x.r?fmt(x.r):'\u2014')+'</td><td class="num r">'+(x.o!==null?'%'+x.o.toFixed(2):'\u2014')+'</td></tr>').join('')+
-   '<tr class="tot"><td>Toplam</td><td class="num r">'+fmt(sumS)+'</td><td class="num r">'+(sumR?fmt(sumR):'\u2014')+'</td><td class="num r">'+(sumR>0?'%'+(100*sumS/sumR).toFixed(2):'\u2014')+'</td></tr>';
+   '<tr><th>Ay</th><th class="r">Tak\u0131m Gideri</th><th class="r">Ge\u00E7en Y\u0131l</th><th class="r">Ciro</th><th class="r">Oran</th></tr>'+
+   finRows.map(x=>'<tr'+(x.m===selMonth?' style="background:var(--acc-soft)"':'')+'><td>'+mLbl(x.m)+'</td><td class="num r">'+(x.s?fmt(x.s):'\u2014')+'</td><td class="num r">'+yoyOf(x.m,x.s)+'</td><td class="num r">'+(x.r?fmt(x.r):'\u2014')+'</td><td class="num r">'+(x.o!==null?'%'+x.o.toFixed(2):'\u2014')+'</td></tr>').join('')+
+   '<tr class="tot"><td>Toplam</td><td class="num r">'+fmt(sumS)+'</td><td class="num r">\u2014</td><td class="num r">'+(sumR?fmt(sumR):'\u2014')+'</td><td class="num r">'+(sumR>0?'%'+(100*sumS/sumR).toFixed(2):'\u2014')+'</td></tr>';
   const famE=Object.entries(M.fam).sort((a,b)=>b[1]-a[1]).slice(0,6);
   window._famNames=famE.map(e=>e[0]);
   chFam.data.labels=famE.map(e=>e[0].slice(0,24));
@@ -1343,6 +1504,61 @@ function render(){
   if(store[2]&&store[2].length&&M.ms.length){
     const eksik=M.ms.filter(m=>!M.revByM[m]).map(mLbl);
     if(eksik.length)dq.push('Sat\u0131\u015F d\u00F6k\u00FCm\u00FC \u015Fu aylar\u0131 kapsam\u0131yor: '+eksik.slice(0,5).join(', ')+(eksik.length>5?'\u2026':''));
+  }
+  // --- Harcama De\u011Fi\u015Fim K\u00F6pr\u00FCs\u00FC ---
+  (function(){
+    const box=document.getElementById('bridgeBox'), note=document.getElementById('bridgeNote'), tg=document.getElementById('brTag');
+    if(!box) return;
+    const idx = focusM ? M.ms.indexOf(focusM) : M.ms.length-1;
+    if(idx<0){ box.innerHTML=''; note.textContent='Kar\u015F\u0131la\u015Ft\u0131rma i\u00E7in veri yok.'; if(tg)tg.textContent='\u2014'; return; }
+    if(idx<1){ box.innerHTML='';
+      note.innerHTML=(focusM?'<b>'+mLbl(M.ms[0])+'</b> d\u00F6nemin ilk ay\u0131 \u2014 kar\u015F\u0131la\u015Ft\u0131racak \u00F6nceki ay yok.':'Kar\u015F\u0131la\u015Ft\u0131rma i\u00E7in en az iki ayl\u0131k veri gerekir.');
+      if(tg)tg.textContent='\u00D6NCEK\u0130 AY YOK'; return; }
+    const cM=M.ms[idx], pM=M.ms[idx-1];
+    if(tg)tg.textContent=(mLbl(pM)+' \u2192 '+mLbl(cM)).toUpperCase();
+    let priceE=0, volE=0, mixE=0, newI=0, goneI=0;
+    for(const k in M.items){
+      const c=M.items[k].months[cM], p=M.items[k].months[pM];
+      const cq=c?c.q:0, ca=c?c.amt:0, pq=p?p.q:0, pa=p?p.amt:0;
+      const cp=cq?ca/cq:0, pp=pq?pa/pq:0;
+      if(cq&&pq&&cp&&pp){
+        priceE += (cp-pp)*pq;
+        volE   += (cq-pq)*pp;
+        mixE   += (cp-pp)*(cq-pq);
+      } else if(cq&&!pq){ newI += ca; }
+      else if(!cq&&pq){ goneI -= pa; }
+    }
+    const diff=(M.byM[cM]||0)-(M.byM[pM]||0);
+    const parts=[
+      {l:mLbl(pM),v:M.byM[pM],c:'#5A6472',abs:true},
+      {l:'Fiyat',v:priceE,c:priceE>=0?'#C24A3A':'#2F8F5B'},
+      {l:'Hacim',v:volE,c:volE>=0?'#2E6FA3':'#8FB3CE'},
+      {l:'Karma',v:mixE,c:'#D8B75B'},
+      {l:'Yeni kalem',v:newI,c:'#2E6FA3'},
+      {l:'\u00C7\u0131kan kalem',v:goneI,c:'#8FB3CE'},
+      {l:mLbl(cM),v:M.byM[cM],c:'#EF7D0C',abs:true}
+    ].filter(x=>x.abs||Math.abs(x.v)>0.005);
+    const maxAbs=Math.max.apply(null,parts.map(x=>Math.abs(x.v)))||1;
+    box.innerHTML=parts.map(x=>{
+      const hgt=Math.max(3,Math.round(78*Math.abs(x.v)/maxAbs));
+      const sign=x.abs?'':(x.v>=0?'+':'\u2212');
+      return '<div class="bcol"><span class="bv" style="color:'+(x.abs?'var(--ink)':x.c)+'">'+sign+fmt(Math.abs(x.v))+'</span>'+
+       '<span class="bbar" style="height:'+hgt+'px;background:'+x.c+'"></span><span class="bl">'+x.l+'</span></div>';
+    }).join('');
+    const kalan=diff-(priceE+volE+mixE+newI+goneI);
+    note.innerHTML='Toplam fark: <b>'+(diff>=0?'+':'\u2212')+fmt(Math.abs(diff))+'</b> \u00B7 '+
+     'fiyat kaynakl\u0131 <b style="color:'+(priceE>=0?'var(--red)':'var(--green)')+'">'+(priceE>=0?'+':'\u2212')+fmt(Math.abs(priceE))+'</b>, '+
+     'hacim kaynakl\u0131 <b>'+(volE>=0?'+':'\u2212')+fmt(Math.abs(volE))+'</b>'+
+     (Math.abs(kalan)>1?' \u00B7 <span style="opacity:.7">yuvarlama fark\u0131 '+fmt(Math.abs(kalan))+'</span>':'');
+  })();
+
+  // --- ay se\u00E7ici ---
+  const msw=document.getElementById('monthSelWrap');
+  if(msw){
+    msw.innerHTML='<select class="'+(selMonth?'on':'')+'" onchange="pickMonth(this.value)">'+
+     '<option value="">T\u00FCm d\u00F6nem ('+M.ms.length+' ay)</option>'+
+     M.ms.slice().reverse().map(m=>'<option value="'+m+'"'+(m===selMonth?' selected':'')+'>'+mLbl(m)+' \u00B7 '+fmt(M.byM[m])+'</option>').join('')+
+     '</select>';
   }
   const dqB=document.getElementById('dqBar');
   if(dq.length){dqB.style.display='block';dqB.innerHTML='\u26A0 '+dq.join(' \u00B7 ');}
