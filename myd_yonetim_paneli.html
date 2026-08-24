@@ -349,7 +349,36 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);padding-bottom:48px}
-.wrap{max-width:760px;margin:0 auto;padding:0 16px}
+.wrap{max-width:1280px;margin:0 auto;padding:0 26px}
+/* --- karma tasarım: koyu KPI şeridi --- */
+.kband{max-width:1280px;margin:0 auto;padding:0 26px 24px;display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.kb{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:15px 17px}
+.kb .label{font-size:.63rem;letter-spacing:.13em;text-transform:uppercase;color:#7B8794;margin-bottom:9px;display:flex;align-items:center}
+.kb .dro{font-family:'IBM Plex Mono','Consolas','Courier New',monospace;font-size:1.75rem;font-weight:600;letter-spacing:-.03em;line-height:1;color:#fff}
+.kb .dro.acc{color:var(--acc)}
+.kb .dro.grn{color:#4FCB8E}
+.kb .delta{font-size:.71rem;margin-top:9px;color:#7B8794;display:block;background:none;padding:0}
+.kb .delta.up{color:#FF8A7A;background:none;padding:0;font-weight:700}
+.kb .delta.down{color:#4FCB8E;background:none;padding:0;font-weight:700}
+.kb .info{color:#7B8794}
+.kb .info:hover{color:var(--acc)}
+/* --- yönetim özeti (editoryal) --- */
+.lead{font-size:.95rem;line-height:1.75;color:#3A4149;max-width:900px;margin:0 0 22px;padding-left:16px;border-left:3px solid var(--acc)}
+.lead b{color:var(--ink);font-weight:700}
+/* --- bölüm başlıkları --- */
+.sect{display:flex;align-items:baseline;justify-content:space-between;gap:14px;
+  font-size:.66rem;letter-spacing:.17em;text-transform:uppercase;color:var(--ink-soft);
+  padding-bottom:9px;border-bottom:1.5px solid var(--ink);margin:30px 0 16px}
+.sect .rn{font-weight:700;color:var(--ink)}
+.sect .rt{color:var(--ink-soft)}
+/* --- iki kolon --- */
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.duo>.panel{margin-bottom:0}
+@media(max-width:900px){
+  .kband{grid-template-columns:1fr 1fr;padding:0 16px 18px}
+  .duo{grid-template-columns:1fr}
+  .wrap{padding:0 16px}
+}
 header{background:var(--ink);color:#fff;padding:20px 0 60px;margin-bottom:-42px}
 .hrow{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:12px}
@@ -535,6 +564,28 @@ tr.supdet td{background:var(--bg);padding:0}
     </div>
     <div class="hline"></div>
   </div>
+  <div class="kband">
+    <div class="kb">
+      <div class="label">Takım Gideri / Ciro<span class="info" onclick="showDef('ratio')">ⓘ</span></div>
+      <div class="dro acc" id="kRatio">—</div>
+      <span class="delta" id="kRatioD">son ortak ay</span>
+    </div>
+    <div class="kb">
+      <div class="label">Aylık Takım Harcaması<span class="info" onclick="showDef('spend')">ⓘ</span></div>
+      <div class="dro" id="kSpend">—</div>
+      <span class="delta" id="kSpendD">son ay</span>
+    </div>
+    <div class="kb">
+      <div class="label">Net Tasarruf Etkisi<span class="info" onclick="showDef('save')">ⓘ</span></div>
+      <div class="dro grn" id="kSave">—</div>
+      <span class="delta" id="kSaveD">tasarruf − zam</span>
+    </div>
+    <div class="kb">
+      <div class="label">Rafta Yatan Stok<span class="info" onclick="showDef('stock')">ⓘ</span></div>
+      <div class="dro" id="kStock">—</div>
+      <span class="delta">son sayım dökümü</span>
+    </div>
+  </div>
 </header>
 
 <div class="wrap">
@@ -550,28 +601,9 @@ tr.supdet td{background:var(--bg);padding:0}
 
   <!-- ============ TAB 0: PANEL ============ -->
   <div class="tab on" id="tab0">
-    <div class="kpis">
-      <div class="kpi" style="--kc:var(--acc)">
-        <div class="label">Takım Gideri / Ciro<span class="info" onclick="showDef('ratio')">ⓘ</span></div>
-        <div class="dro" id="kRatio">—</div>
-        <span class="delta" id="kRatioD">son ortak ay</span>
-      </div>
-      <div class="kpi">
-        <div class="label">Aylık Takım Harcaması<span class="info" onclick="showDef('spend')">ⓘ</span></div>
-        <div class="dro" id="kSpend">—</div>
-        <span class="delta" id="kSpendD">son ay</span>
-      </div>
-      <div class="kpi" style="--kc:var(--green)">
-        <div class="label">Gerçekleşen Tasarruf<span class="info" onclick="showDef('save')">ⓘ</span></div>
-        <div class="dro" id="kSave">—</div>
-        <span class="delta" id="kSaveD">baz fiyat yöntemi · dönem</span>
-      </div>
-      <div class="kpi">
-        <div class="label">Rafta Yatan Takım Stoğu<span class="info" onclick="showDef('stock')">ⓘ</span></div>
-        <div class="dro" id="kStock">—</div>
-        <span class="delta">son sayım dökümü</span>
-      </div>
-    </div>
+    <div class="lead" id="leadTxt"></div>
+
+    <div class="sect"><span><span class="rn">I</span> &nbsp;Harcama Seyri</span><span class="rt" id="sect1r"></span></div>
 
     <div class="panel">
       <h3>Aylık Takım Harcaması <span class="tag">TREND</span></h3>
@@ -585,6 +617,8 @@ tr.supdet td{background:var(--bg);padding:0}
       <div class="chart-box"><canvas id="chSave"></canvas></div><div id="saveDetail"></div>
     </div>
 
+    <div class="sect"><span><span class="rn">II</span> &nbsp;Fiyat Hareketleri ve Nedenleri</span><span class="rt" id="sect2r"></span></div>
+
     <div class="panel">
       <h3 class="clps" onclick="pnlTgl(this)">Harcama Değişim Köprüsü <span class="tag" id="brTag">SON İKİ AY</span><span class="info" onclick="event.stopPropagation();showDef('bridge')">ⓘ</span><span class="caret">▾</span></h3>
       <div class="pbody">
@@ -594,6 +628,9 @@ tr.supdet td{background:var(--bg);padding:0}
       </div>
     </div>
 
+    <div class="sect"><span><span class="rn">III</span> &nbsp;Tedarikçi ve Kalem Analizi</span><span class="rt" id="sect3r"></span></div>
+
+    <div class="duo">
     <div class="panel">
       <h3 class="clps" onclick="pnlTgl(this)">Tedarikçi Karnesi <span class="tag" id="supTag">DÖNEM GENELİ</span><span class="xls-btn" onclick="event.stopPropagation();exportSup()">⬇ EXCEL</span><span class="caret">▾</span></h3>
       <div class="pbody">
@@ -610,8 +647,12 @@ tr.supdet td{background:var(--bg);padding:0}
       <table id="tblAbc"></table>
       </div>
     </div>
+    </div>
 
-        <div class="panel">
+    <div class="sect"><span><span class="rn">IV</span> &nbsp;Aksiyon ve Takip</span><span class="rt" id="sect4r"></span></div>
+
+    <div class="duo">
+    <div class="panel">
       <h3 class="clps" onclick="pnlTgl(this)">Aksiyonlar <span class="tag" id="actTag">0 AÇIK</span><span class="caret">▾</span></h3>
       <div class="pbody">
       <div class="sub">"Bu Ay Dikkat" satırlarından açılır · duruma tıklayın → Açık/Kapalı değişir</div>
@@ -624,6 +665,10 @@ tr.supdet td{background:var(--bg);padding:0}
       <div class="sub">Baz fiyata göre en büyük yıllık etkiler · <span class="hinttxt">satıra tıklayın → kalemin ay ay fiyat geçmişi</span></div>
       <div id="attList"><div class="att"><span class="dot" style="background:var(--ink-soft)"></span><div><div class="t">Veri bekleniyor</div><div class="d">Alış dökümü yüklendiğinde fiyat hareketleri burada listelenir</div></div></div></div>
     </div>
+
+    </div>
+
+    <div class="sect"><span><span class="rn">V</span> &nbsp;Yönetim Özeti</span><span class="rt">aylık</span></div>
 
     <div class="panel digest">
       <div class="head">◉ Aylık Yönetim Özeti <span class="upbtn ghost" style="margin-left:auto;padding:4px 10px;font-size:.7rem" onclick="pdfReport()">⬇ PDF Rapor</span></div>
@@ -641,6 +686,16 @@ tr.supdet td{background:var(--bg);padding:0}
       <div class="kpi" style="--kc:var(--green)">
         <div class="label">Toplam Ciro (dönem)</div>
         <div class="dro" id="fRev">—</div>
+      </div>
+      <div class="kpi" style="--kc:var(--acc)">
+        <div class="label">Ortalama Oran (dönem)<span class="info" onclick="showDef('ratio')">ⓘ</span></div>
+        <div class="dro" id="fAvg">—</div>
+        <span class="delta" id="fAvgD">seçili aralık</span>
+      </div>
+      <div class="kpi">
+        <div class="label">En İyi / En Kötü Ay</div>
+        <div class="dro" id="fBest" style="font-size:1.02rem">—</div>
+        <span class="delta" id="fBestD"></span>
       </div>
     </div>
 
@@ -1456,6 +1511,25 @@ function render(){
   chRatio.data.labels=rms.map(x=>mLbl(x.m));
   chRatio.data.datasets[0].data=rms.map(x=>+x.o.toFixed(2));
   const avgO = (sumR>0)?100*sumS/sumR:0;
+  (function(){
+    const fa=document.getElementById('fAvg'), fad=document.getElementById('fAvgD');
+    if(fa){
+      if(sumR>0){
+        fa.textContent='%'+avgO.toFixed(2);
+        const lbl = periodMode==='last12'?'son 12 ay':(periodMode==='year'?periodYear:'t\u00FCm d\u00F6nem');
+        fad.textContent=lbl+' \u00B7 '+rms.length+' ay ortalamas\u0131';
+      } else { fa.textContent='\u2014'; fad.textContent='ciro verisi yok'; }
+    }
+    const fb=document.getElementById('fBest'), fbd=document.getElementById('fBestD');
+    if(fb){
+      if(rms.length>1){
+        const srt=rms.slice().sort((a,b)=>a.o-b.o);
+        const best=srt[0], worst=srt[srt.length-1];
+        fb.innerHTML='<span style="color:var(--green)">%'+best.o.toFixed(2)+'</span> / <span style="color:var(--red)">%'+worst.o.toFixed(2)+'</span>';
+        fbd.textContent=mLbl(best.m)+' en iyi \u00B7 '+mLbl(worst.m)+' en k\u00F6t\u00FC';
+      } else { fb.textContent='\u2014'; fbd.textContent='kar\u015F\u0131la\u015Ft\u0131rma i\u00E7in yetersiz'; }
+    }
+  })();
   chRatio.data.datasets[1].data=rms.map(()=>+avgO.toFixed(2));
   chRatio.update();
   window._rms=rms.map(x=>x.m);
@@ -1505,6 +1579,41 @@ function render(){
     const eksik=M.ms.filter(m=>!M.revByM[m]).map(mLbl);
     if(eksik.length)dq.push('Sat\u0131\u015F d\u00F6k\u00FCm\u00FC \u015Fu aylar\u0131 kapsam\u0131yor: '+eksik.slice(0,5).join(', ')+(eksik.length>5?'\u2026':''));
   }
+  // --- Y\u00F6netim \u00F6zeti paragraf\u0131 (editoryal) ---
+  (function(){
+    const el=document.getElementById('leadTxt'); if(!el) return;
+    if(!M.ms.length){ el.innerHTML=''; return; }
+    const sM=focusM||M.ms[M.ms.length-1];
+    const avg=M.ms.reduce((s,m)=>s+M.byM[m],0)/M.ms.length;
+    const dv=avg>0?100*(M.byM[sM]-avg)/avg:0;
+    const srt=M.ms.slice().sort((a,b)=>M.byM[b]-M.byM[a]);
+    const rank=srt.indexOf(sM)+1;
+    const rev=M.revByM[sM]||0;
+    const totS=M.saved.reduce((a,b)=>a+b,0), totL=M.lost.reduce((a,b)=>a+b,0);
+    // fiyat/hacim ozeti
+    const ix=M.ms.indexOf(sM);
+    let pE=0,vE=0;
+    if(ix>0){ const cM=sM,pM=M.ms[ix-1];
+      for(const k in M.items){
+        const c=M.items[k].months[cM],p=M.items[k].months[pM];
+        if(c&&p&&c.q&&p.q){ const cp=c.amt/c.q,pp=p.amt/p.q; pE+=(cp-pp)*p.q; vE+=(c.q-p.q)*pp; }
+      }
+    }
+    const ups=Object.values(M.items).filter(it=>it.base>0&&it.last>it.base*1.02).length;
+    let t='<b>'+mLbl(sM)+'</b> ay\u0131nda tak\u0131m harcamas\u0131 <b>'+fmt(M.byM[sM])+'</b> olarak ger\u00E7ekle\u015Fti; '+
+      M.ms.length+' ayl\u0131k ortalaman\u0131n <b>%'+Math.abs(dv).toFixed(1)+' '+(dv>0?'\u00FCzerinde':'alt\u0131nda')+'</b> ve d\u00F6nemin en '+(rank<=Math.ceil(M.ms.length/2)?'y\u00FCksek':'d\u00FC\u015F\u00FCk')+' '+
+      (rank<=Math.ceil(M.ms.length/2)?rank:(M.ms.length-rank+1))+'. ay\u0131. ';
+    if(rev>0) t+='Gider/ciro oran\u0131 <b>%'+(100*M.byM[sM]/rev).toFixed(2)+'</b>. ';
+    if(ix>0&&(Math.abs(pE)>1||Math.abs(vE)>1)){
+      t+='Bir \u00F6nceki aya g\u00F6re de\u011Fi\u015Fimin <b>'+fmt(Math.abs(pE))+'\u0027i fiyat</b>, <b>'+fmt(Math.abs(vE))+'\u0027i hacim</b> kaynakl\u0131. ';
+    }
+    if(ups>0) t+='<b>'+ups+' kalemde</b> fiyat art\u0131\u015F\u0131 izleniyor; d\u00F6nem zam etkisi <b>'+fmt(totL)+'</b>, tasarruf <b>'+fmt(totS)+'</b>.';
+    else t+='D\u00F6nem tasarrufu <b>'+fmt(totS)+'</b>.';
+    el.innerHTML=t;
+    const s1=document.getElementById('sect1r'); if(s1)s1.textContent=M.ms.length+' ay';
+    const s3=document.getElementById('sect3r'); if(s3)s3.textContent=Object.keys(M.sup).length+' tedarik\u00E7i \u00B7 '+Object.keys(M.items).length+' kalem';
+  })();
+
   // --- Harcama De\u011Fi\u015Fim K\u00F6pr\u00FCs\u00FC ---
   (function(){
     const box=document.getElementById('bridgeBox'), note=document.getElementById('bridgeNote'), tg=document.getElementById('brTag');
