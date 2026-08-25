@@ -1743,31 +1743,102 @@ function render(){
 /* ============ örnek veri ============ */
 function demoLoad(){
   window._demoMode=true;
-  const inv=[],sal=[],stk=[];
-  const items=[['Tedarik\u00E7i 1','TK-0101','\u00D812 karb\u00FCr freze 4Z',62.0,58.9,57.9],
-   ['Tedarik\u00E7i 2','TK-0202','CNMG 120408 tornalama ucu',14.0,12.4,11.8],
-   ['Tedarik\u00E7i 3','TK-0303','\u00D88.5 karb\u00FCr matkap 5xD',88.0,89.5,91.2],
-   ['Tedarik\u00E7i 4','TK-0404','M10 makina k\u0131lavuzu HSS-E',16.4,17.1,17.9]];
-  const mss=['2026.04.Ay','2026.05.Ay','2026.06.Ay'], qty=[[38,42,40],[180,210,195],[24,20,26],[50,44,48]];
-  items.forEach((it,i)=>mss.forEach((m,k)=>{
-    const q=qty[i][k],p=it[3+k];
-    inv.push({'Tarih':m,'Tedarik\u00E7i':it[0],'Kalem Kodu':it[1],'A\u00E7\u0131klama':it[2],
-      'Adet':q,'Tutar (KDV Hari\u00E7)':+(q*p).toFixed(2),'Para Birimi':'USD','Kur':null});
-  }));
-  const parts=[['PRT-1001','Par\u00E7a Ailesi 1 (Firma 1)',120,3200],['PRT-2002','Par\u00E7a Ailesi 2 (Firma 2)',400,23],['PRT-3003','Par\u00E7a Ailesi 3 (Firma 2)',300,12.4],['PRT-4004','Par\u00E7a Ailesi 4 (Firma 3)',150,41]];
-  parts.forEach(p=>mss.forEach(m=>{
-    sal.push({'Tarih':m,'Par\u00E7a No':p[0],'Par\u00E7a Ailesi':p[1],'Sevk Adedi':p[2],
-      'Tutar (KDV Hari\u00E7)':+(p[2]*p[3]).toFixed(0),'Para Birimi':'USD','Kur':null});
-  }));
-  items.forEach(it=>stk.push({'Tarih':'-','Kalem Kodu':it[1],'A\u00E7\u0131klama':it[2],
-    'Adet':40,'Birim Maliyet':it[5],'Para Birimi':'USD'}));
+  let _s=987654321;
+  const rnd=()=>{_s=(_s*1103515245+12345)&0x7fffffff;return _s/0x7fffffff;};
+  const jit=(p)=>1+(rnd()-0.5)*p;
+
+  // 24 ay: 2024.07 → 2026.06
+  const MS=[];
+  for(let n=2024*12+6;n<=2026*12+5;n++) MS.push({k:Math.floor(n/12)+'.'+String(n%12+1).padStart(2,'0')+'.Ay', mi:n%12});
+  const seas=[0.88,1.02,1.08,1.05,1.00,0.95,1.00,0.85,0.95,1.05,1.00,0.90]; // Oca..Ara
+
+  // [tedarikçi, kod, açıklama, baz fiyat, aylık fiyat değişimi, aylık adet, para birimi]
+  const IT=[
+   ['Tedarikçi 1','TK-0101','Ø12 karbür parmak freze 4Z AlTiN', 62.0,-0.0062,130,'USD'],
+   ['Tedarikçi 2','TK-0202','CNMG 120408 tornalama ucu',        14.0,-0.0120,420,'USD'],
+   ['Tedarikçi 3','TK-0303','Ø8.5 karbür matkap 5xD',           88.0, 0.0092, 60,'USD'],
+   ['Tedarikçi 2','TK-0404','DNMG 150608 tornalama ucu',        13.0,-0.0040,320,'USD'],
+   ['Tedarikçi 1','TK-0505','Ø16 karbür parmak freze 4Z',       95.0, 0.0008, 40,'USD'],
+   ['Tedarikçi 3','TK-0606','Ø20 U-delme kesici ucu',           78.0,-0.0025, 42,'USD'],
+   ['Tedarikçi 4','TK-0707','M10 makina kılavuzu HSS-E',        16.4, 0.0110,110,'TRY'],
+   ['Tedarikçi 1','TK-0808','Ø6 karbür parmak freze 2Z',        34.0,-0.0015, 52,'USD'],
+   ['Tedarikçi 2','TK-0909','VNMG 160404 tornalama ucu',        15.0,-0.0030,115,'USD'],
+   ['Tedarikçi 5','TK-1010','Ø10 HSS matkap',                   12.0, 0.0042,130,'USD'],
+   ['Tedarikçi 5','TK-1111','Tarama kafası kesici ucu',         22.0, 0.0005, 65,'USD'],
+   ['Tedarikçi 3','TK-1212','Ø25 makina raybası',              145.0, 0.0050,  8,'USD'],
+   ['Tedarikçi 4','TK-1313','M8 makina kılavuzu HSS-E',         11.0, 0.0020, 90,'TRY'],
+   ['Tedarikçi 1','TK-1414','Ø3 mikro freze 2Z',                41.0,-0.0010, 20,'USD'],
+   ['Tedarikçi 6','TK-1515','Metal testere bıçağı',             68.0, 0.0030,  9,'TRY'],
+   ['Tedarikçi 6','TK-1616','90° havşa ucu',                    27.0, 0.0000, 18,'TRY'],
+   ['Tedarikçi 2','TK-1717','Pah kırma kesici ucu',             19.0,-0.0018, 20,'USD'],
+   ['Tedarikçi 4','TK-1818','Punta matkabı A tipi',              9.0, 0.0015, 28,'TRY']
+  ];
+  // yeni kalem (19. aydan itibaren) / çıkan kalem (19. ayda biter)
+  const NEW=['Tedarikçi 3','TK-1919','Yüksek devir freze Ø10 3Z',110.0,-0.0020,25,'USD'];
+  const OLD=['Tedarikçi 4','TK-2020','Eski tip kaplamasız uç',   17.0, 0.0035,60,'TRY'];
+
+  const KUR=(i)=>+(33.5+i*0.42).toFixed(2); // kur zamanla artıyor
+  const inv=[];
+  const push=(it,mIdx,m)=>{
+    const [sup,code,desc,p0,drift,q0,pb]=it;
+    const p=p0*Math.pow(1+drift,mIdx)*jit(0.03);
+    const q=Math.max(1,Math.round(q0*seas[m.mi]*jit(0.16)));
+    const kur=pb==='TRY'?KUR(mIdx):null;
+    const amtUSD=q*p;
+    const amt=pb==='TRY'?amtUSD*kur:amtUSD;
+    inv.push({'Tarih':m.k,'Tedarikçi':sup,'Kalem Kodu':code,'Açıklama':desc,
+      'Adet':q,'Tutar (KDV Hariç)':+amt.toFixed(2),'Para Birimi':pb,'Kur':kur});
+  };
+  MS.forEach((m,i)=>{
+    IT.forEach(it=>push(it,i,m));
+    if(i>=18) push(NEW,i,m);
+    if(i<18)  push(OLD,i,m);
+    // hesaba girmemesi gereken genel kodlar
+    inv.push({'Tarih':m.k,'Tedarikçi':'Tedarikçi 1','Kalem Kodu':'TAKIM GENEL','Açıklama':'Muhtelif takım gideri',
+      'Adet':1,'Tutar (KDV Hariç)':15000,'Para Birimi':'USD','Kur':null});
+    inv.push({'Tarih':m.k,'Tedarikçi':'Tedarikçi 2','Kalem Kodu':'TK0000','Açıklama':'Genel sarf',
+      'Adet':1,'Tutar (KDV Hariç)':8000,'Para Birimi':'USD','Kur':null});
+  });
+
+  // satış: 5 parça ailesi, ciro zamanla büyüyor → oran iyileşiyor
+  const PARTS=[['PRT-1001','Parça Ailesi 1',  95, 3450],
+               ['PRT-2002','Parça Ailesi 2', 380,  740],
+               ['PRT-3003','Parça Ailesi 3', 260,  620],
+               ['PRT-4004','Parça Ailesi 4', 140, 1180],
+               ['PRT-5005','Parça Ailesi 5', 210,  430]];
+  const sal=[];
+  MS.forEach((m,i)=>{
+    const growth=1+i*0.011;
+    PARTS.forEach(p=>{
+      const q=Math.max(1,Math.round(p[2]*seas[m.mi]*growth*jit(0.12)));
+      sal.push({'Tarih':m.k,'Parça No':p[0],'Parça Ailesi':p[1],'Sevk Adedi':q,
+        'Tutar (KDV Hariç)':+(q*p[3]*jit(0.05)).toFixed(0),'Para Birimi':'USD','Kur':null});
+    });
+  });
+
+  // stok sayımı (son dönem fiyatlarıyla)
+  const stk=[];
+  IT.concat([NEW]).forEach((it,idx)=>{
+    const p=it[3]*Math.pow(1+it[4],23);
+    const adet=Math.max(4,Math.round(it[5]*(0.6+rnd()*1.5)));
+    stk.push({'Tarih':'-','Kalem Kodu':it[1],'Açıklama':it[2],
+      'Adet':adet,'Birim Maliyet':+p.toFixed(2),'Para Birimi':'USD'});
+  });
+
   store[1]=inv;store[2]=sal;store[3]=stk;
   [[1,inv],[2,sal],[3,stk]].forEach(([s,d])=>{
     const st=document.getElementById('st'+s);
-    st.className='upstat ok';
-    st.textContent='\u2713 \u00F6rnek veri \u00B7 '+d.length+' sat\u0131r';
+    if(st){ st.className='upstat ok'; st.textContent='\u2713 örnek veri · '+d.length+' satır'; }
   });
-  render(); setTab(0);
+  // örnek aksiyonlar
+  if(!actions.length){
+    actions=[
+      {id:1,k:'TK-0303',d:'Ø8.5 karbür matkap 5xD',s:'Tedarikçi 3',sor:'E. Meydan',ter:'15.07.2026',st:'Açık',not:'Yeniden teklif alınacak'},
+      {id:2,k:'TK-0707',d:'M10 makina kılavuzu HSS-E',s:'Tedarikçi 4',sor:'Satın Alma',ter:'01.06.2026',st:'Açık',not:'Alternatif tedarikçi araştırılacak'},
+      {id:3,k:'TK-0202',d:'CNMG 120408 tornalama ucu',s:'Tedarikçi 2',sor:'E. Meydan',ter:'20.05.2026',st:'Kapalı',not:'Yıllık anlaşma imzalandı'}
+    ];
+  }
+  render(); setView(1);
 }
 
 /* ============ başlat ============ */
