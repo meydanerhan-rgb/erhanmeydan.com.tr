@@ -345,7 +345,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   --steel:#2E6FA3; --steel-soft:#E7F0F8;
   --green:#2F8F5B; --green-soft:#E5F3EC;
   --red:#C24A3A; --red-soft:#FAE9E6;
-  --radius:12px; font-size:15px;
+  --radius:12px;--lead:#3A4149; font-size:15px;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh}
@@ -387,7 +387,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 /* ===== görünümler ===== */
 .view{display:none}
 .view.on{display:block}
-.lead{font-size:.92rem;line-height:1.72;color:#3A4149;max-width:920px;margin:0 0 20px;padding-left:15px;border-left:3px solid var(--acc)}
+.lead{font-size:.92rem;line-height:1.72;color:var(--lead);max-width:920px;margin:0 0 20px;padding-left:15px;border-left:3px solid var(--acc)}
 .lead b{color:var(--ink);font-weight:700}
 .duo{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .duo>.panel{margin-bottom:0}
@@ -418,7 +418,7 @@ header{background:var(--ink);color:#fff;padding:18px 0 0;margin-bottom:0}
 .mpop .mfoot button{flex:1;background:var(--ink);color:#fff;border:none;border-radius:7px;padding:7px 0;font-size:.72rem;font-weight:700;cursor:pointer;font-family:inherit}
 .mpop .mfoot button.gh{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
 /* ===== koyu tema ===== */
-body.dark{--bg:#151A20;--surface:#1D242C;--ink:#E8ECF0;--ink-soft:#94A0AC;--line:#2C353E;
+body.dark{--lead:#B6C0CA;--bg:#151A20;--surface:#1D242C;--ink:#E8ECF0;--ink-soft:#94A0AC;--line:#2C353E;
   --acc-soft:#3A2A16;--steel-soft:#1B2A38;--green-soft:#16281F;--red-soft:#2E1A17}
 body.dark .panel{box-shadow:none}
 body.dark tr.supdet td,body.dark .attd,body.dark .abc-sum .box,body.dark .mpop .mfoot button.gh{background:#161C22}
@@ -428,8 +428,15 @@ body.dark .digest .bubble{background:#1D242C;color:var(--ink)}
 body.dark .dq{background:#2A2214;border-color:#4A3D1E;color:#E4B27A}
 body.dark td{border-bottom-color:#252D35}
 body.dark .mpop{background:#1D242C}
+body.dark .modal{background:#1D242C}
+body.dark .upstat.ok{background:#16281F;color:#7FD4A2}
+body.dark .upstat.err{background:#2E1A17;color:#FF9B8C}
+body.dark tr.tot td{background:#161C22}
+body.dark .cls.C{background:#161C22;color:var(--ink-soft);border-color:var(--line)}
+body.dark .bar{opacity:.85}
+body.dark #brDetail{background:#161C22}
 body.dark .recon-row input{background:#161C22;color:var(--ink)}
-body.dark .lead{color:#B6C0CA}
+
 @media(max-width:1000px){
   body{flex-direction:column}
   .sbar{width:100%;height:auto;position:static;flex-direction:row;flex-wrap:wrap;padding:10px;gap:4px}
@@ -442,18 +449,18 @@ body.dark .lead{color:#B6C0CA}
   .wrap{padding:0 16px}
 }
 @media(max-width:620px){ .kband,.tband{grid-template-columns:1fr} }
-header{background:var(--ink);color:#fff;padding:20px 0 60px;margin-bottom:-42px}
+
 .hrow{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:12px}
 .logo-chip{background:#fff;border-radius:9px;padding:7px 12px;display:flex;align-items:center}
 .logo-chip img{height:30px;display:block}
-.htitle{font-family:'Segoe UI','Segoe UI',system-ui,sans-serif;font-weight:700;font-size:1.08rem;color:#fff;letter-spacing:-0.01em}
+
 .hsub{font-size:.64rem;color:#8A94A0;letter-spacing:.1em;text-transform:uppercase;margin-top:2px}
 .hctrl{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .hinfo{font-size:.7rem;color:#9AA4AF;text-align:right;line-height:1.5}
 .hinfo b{color:#fff}
 .hinfo .dtag{background:var(--acc);color:var(--ink);font-weight:700;font-size:.6rem;padding:1px 7px;border-radius:4px;margin-left:4px}
-.hline{height:3px;border-radius:2px;margin-top:16px;background:linear-gradient(90deg,var(--acc) 0%,#F5A94F 45%,rgba(245,169,79,0) 100%)}
+
 .seg{display:flex;border:1px solid rgba(255,255,255,.25);border-radius:8px;overflow:hidden}
 .seg button{background:none;border:none;color:#9AA4AF;padding:6px 14px;font-size:.78rem;font-weight:600;cursor:pointer;font-family:'Consolas',monospace}
 .seg button.on{background:var(--acc);color:var(--ink)}
@@ -522,9 +529,9 @@ footer{text-align:center;font-size:.7rem;color:var(--ink-soft);margin-top:20px}
 .trendcap{font-size:.76rem;color:var(--ink-soft);margin-top:8px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px}
 .trendcap b{color:var(--ink)}
 .trendcap .lnk{color:var(--acc);font-weight:600;cursor:pointer}
-.pbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
-.pbar button{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:6px 14px;font-size:.76rem;font-weight:600;color:var(--ink-soft);cursor:pointer;font-family:inherit}
-.pbar button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+
+
 .dq{background:#FFF6E0;border:1px solid #EAD9A8;border-radius:10px;padding:9px 14px;font-size:.76rem;color:#6B5308;margin-bottom:12px}
 #famDetail{margin-top:10px}
 #famDetail table td{font-size:.76rem;padding:5px 8px}
@@ -842,8 +849,6 @@ tr.supdet td{background:var(--bg);padding:0}
 
   <footer>MYD Yönetim · v0.2 · Uygulamayı tasarlayan: <b>Erhan Meydan</b></footer>
 </div>
-
-
 </div>
 <script>
 /* ============ para & tarih ============ */
